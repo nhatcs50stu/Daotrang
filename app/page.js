@@ -16,12 +16,30 @@ const MENU = {
   contact: { n: 'Liên hệ', subs: [] },
 };
 
+function useMobile() {
+  const [m, setM] = useState(false);
+  useEffect(() => {
+    const q = window.matchMedia('(max-width: 800px)'); const f = () => setM(q.matches);
+    f(); q.addEventListener('change', f); return () => q.removeEventListener('change', f);
+  }, []);
+  return m;
+}
+
 export default function Home() {
   const [role, setRole] = useState('guest');
   const [db, setDb] = useState(null);
   const [menu, setMenu] = useState('personal');
   const [sub, setSub] = useState(0);
   const [login, setLogin] = useState(false);
+  const [theme, setTheme] = useState('auto');
+  const [open, setOpen] = useState(false);
+  const mobile = useMobile();
+  useEffect(() => { try { setTheme(localStorage.getItem('theme') || 'auto'); } catch {} }, []);
+  useEffect(() => {
+    const el = document.documentElement;
+    theme === 'auto' ? el.removeAttribute('data-theme') : el.setAttribute('data-theme', theme);
+    try { localStorage.setItem('theme', theme); } catch {}
+  }, [theme]);
 
   const load = async () => { const r = await (await fetch('/api/data')).json(); setRole(r.role); setDb(r.db); };
   useEffect(() => { load(); }, []);
@@ -36,9 +54,14 @@ export default function Home() {
   const T = (key, title, c) => <Text key={key} title={title} value={db[key]} can={c} onSave={(v) => save(key, v)} />;
   const upcoming = [...db.journey].filter((e) => e.date >= today()).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
 
+  const auth = (cls) => role === 'guest'
+    ? <button className={'nb login ' + cls} onClick={() => setLogin(true)}>Đăng nhập</button>
+    : <button className={'nb ' + cls} onClick={async () => { await fetch('/api/login', { method: 'DELETE' }); load(); }}>Đăng xuất</button>;
+  const nextTheme = () => setTheme(theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto');
+
   const main = (
     <>
-      {menu === 'personal' && <Journey view={sub === 0 ? 'tree' : 'calendar'} events={db.journey} admin={admin} onSave={(v) => save('journey', v)} />}
+      {menu === 'personal' && <Journey view={sub === 0 ? 'tree' : 'calendar'} events={db.journey} admin={admin} onSave={(v) => save('journey', v)} mobile={mobile} theme={theme} att={db.attendance} total={db.members.length} />}
       {k === 'activity0' && <Attendance db={db} save={save} can={can} />}
       {k === 'activity1' && <Reports list={db.reports} can={can} onSave={(v) => save('reports', v)} att={db.attendance} total={db.members.length} />}
       {k === 'about0' && T('history', 'Lịch sử Đạo tràng Pháp Hoa', can)}
@@ -53,19 +76,38 @@ export default function Home() {
 
   return (
     <div>
+      <header className="mbar">
+        <button className="hamb" aria-label="Mở menu" onClick={() => setOpen(true)}>
+          <svg width="20" height="20" viewBox="0 0 20 20" stroke="#F7F5F0" strokeWidth="2" strokeLinecap="round"><path d="M3 5h14M3 10h14M3 15h14" /></svg>
+        </button>
+        <span className="ttl">Đạo tràng Pháp Hoa</span>
+        {auth('sm')}
+      </header>
       <div className="top">
         <span style={{ width: 28 }} />
         <span>Đạo tràng Pháp Hoa</span>
-        <svg width="28" height="28" viewBox="0 0 44 44" fill="none" stroke="#5D6658" strokeWidth="2.5" strokeLinejoin="round"><path d="M22 8c4 4 5 10 0 17-5-7-4-13 0-17z" /><path d="M22 25c-2-7-8-9-14-8 1 8 7 12 14 8z" /><path d="M22 25c2-7 8-9 14-8-1 8-7 12-14 8z" /></svg>
+        <svg width="28" height="28" viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round"><path d="M22 8c4 4 5 10 0 17-5-7-4-13 0-17z" /><path d="M22 25c-2-7-8-9-14-8 1 8 7 12 14 8z" /><path d="M22 25c2-7 8-9 14-8-1 8-7 12-14 8z" /></svg>
       </div>
       <nav className="navbar">
         {Object.entries(MENU).map(([key, m]) => (
           <button key={key} className={'nb ' + (menu === key ? 'on' : '')} onClick={() => { setMenu(key); setSub(0); }}>{m.n}</button>))}
         <span style={{ marginLeft: 'auto', color: '#F7F5F0', fontSize: 13 }}>{admin ? 'Quản trị viên' : can ? 'Thành viên' : 'Khách'}</span>
-        {role === 'guest'
-          ? <button className="nb login" onClick={() => setLogin(true)}>Đăng nhập</button>
-          : <button className="nb" onClick={async () => { await fetch('/api/login', { method: 'DELETE' }); load(); }}>Đăng xuất</button>}
+        <button className="nb" onClick={nextTheme}>{theme === 'auto' ? '◐ Tự động' : theme === 'light' ? '☀ Sáng' : '☾ Tối'}</button>
+        {auth('')}
       </nav>
+      {open && (
+        <div className="overlay" onClick={() => setOpen(false)}>
+          <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="muted" style={{ margin: '0 4px 10px' }}>Đạo tràng Pháp Hoa · {admin ? 'Quản trị viên' : can ? 'Thành viên' : 'Khách'}</div>
+            {Object.entries(MENU).map(([key, m]) => (
+              <div key={key}>
+                <button className={'dr ' + (menu === key ? 'on' : '')} onClick={() => { setMenu(key); setSub(0); if (!m.subs.length) setOpen(false); }}>{m.n}</button>
+                {menu === key && m.subs.map((s, i) => <button key={s} className={'dr s ' + (sub === i ? 'on' : '')} onClick={() => { setSub(i); setOpen(false); }}>{s}</button>)}
+              </div>))}
+            <div className="themes"><div className="muted">Giao diện</div>
+              <div className="row">{[['auto', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']].map(([v, n]) => <button key={v} className={'btn ' + (theme === v ? '' : 'alt')} onClick={() => setTheme(v)}>{n}</button>)}</div></div>
+          </aside>
+        </div>)}
       {MENU[menu].subs.length > 0 && (
         <div className="subbar">{MENU[menu].subs.map((s, i) => <button key={s} className={'sb ' + (sub === i ? 'on' : '')} onClick={() => setSub(i)}>{s}</button>)}</div>)}
       <div className="body">
@@ -128,13 +170,13 @@ function buildTree(events) {
   const nodes = s.map((e) => ({
     id: e.id, position: pos[e.id], sourcePosition: 'right', targetPosition: 'left',
     data: { label: <div>{e.image && <img src={e.image} alt="" style={{ width: '100%', height: 64, objectFit: 'cover', borderRadius: 8, marginBottom: 4 }} />}<b>{fmt(e.date)}</b><br />{e.title}{e.count ? ` · ${e.count} người` : ''}</div> },
-    style: { width: 170, background: '#fff', border: '2px solid ' + (TYPE_COLOR[e.title] || '#C9B79C'), borderRadius: 12, fontSize: 13, padding: 6 },
+    style: { width: 170, background: 'var(--card)', color: 'var(--ink)', border: '2px solid ' + (TYPE_COLOR[e.title] || '#C9B79C'), borderRadius: 12, fontSize: 13, padding: 6 },
   }));
-  const edges = s.filter((e) => par[e.id]).map((e) => ({ id: 'e' + e.id, source: par[e.id], target: e.id, type: 'smoothstep', style: { stroke: '#5D6658' } }));
+  const edges = s.filter((e) => par[e.id]).map((e) => ({ id: 'e' + e.id, source: par[e.id], target: e.id, type: 'smoothstep', style: { stroke: '#8A9484' } }));
   return { nodes, edges };
 }
 
-function Journey({ events, admin, onSave, view }) {
+function Journey({ events, admin, onSave, view, mobile, theme, att, total }) {
   const [sel, setSel] = useState(null);
   const [month, setMonth] = useState(today().slice(0, 7));
   const { nodes, edges } = useMemo(() => buildTree(events), [events]);
@@ -153,16 +195,20 @@ function Journey({ events, admin, onSave, view }) {
         {admin && <button className="btn" onClick={() => add()}>+ Thêm ngày tu</button>}
       </div>
       {!events.length && <p className="muted">Chưa có ngày tu tập nào.{admin && ' Bấm “+ Thêm ngày tu” để bắt đầu.'}</p>}
-      {view === 'tree' ? (
+      {view === 'tree' && mobile ? (
+        <MobileTree events={events} setSel={setSel} />
+      ) : view === 'tree' ? (
         <>
           <div className="tree">
-            <ReactFlow nodes={nodes} edges={edges} fitView minZoom={0.2} nodesDraggable={false} nodesConnectable={false}
+            <ReactFlow colorMode={theme === 'auto' ? 'system' : theme} nodes={nodes} edges={edges} fitView minZoom={0.2} nodesDraggable={false} nodesConnectable={false}
               onNodeClick={(_, n) => setSel(events.find((e) => e.id === n.id))}>
-              <Background color="#E6E2D6" /><Controls showInteractive={false} />
+              <Background color="#8A948466" /><Controls showInteractive={false} />
             </ReactFlow>
           </div>
           <p className="muted">Kéo để di chuyển, lăn chuột để phóng to hoặc thu nhỏ. Bấm vào một ngày để xem{admin && ', bấm “+ Thêm nhánh” trong cửa sổ đó để vẽ nhánh mới'}.</p>
         </>
+      ) : mobile ? (
+        <WeekCal events={events} admin={admin} att={att} total={total} month={month} shift={shift} setSel={setSel} add={add} />
       ) : (
         <>
           <div className="row"><button className="btn alt" onClick={() => shift(-1)}>‹</button><b>Tháng {m}/{y}</b><button className="btn alt" onClick={() => shift(1)}>›</button></div>
@@ -184,6 +230,53 @@ function Journey({ events, admin, onSave, view }) {
       {sel && <EventModal key={sel.id} e={sel} admin={admin} onClose={() => setSel(null)} onSave={saveEv}
         onBranch={(p) => add(today(), p.id)}
         onDelete={() => { onSave(events.filter((i) => i.id !== sel.id)); setSel(null); }} />}
+    </>
+  );
+}
+
+function MobileTree({ events, setSel }) {
+  const s = [...events].sort((a, b) => a.date.localeCompare(b.date));
+  return (
+    <div className="vtree">
+      {s.map((e) => (
+        <div key={e.id} className={'vnode ' + (e.parent ? 'br' : '')} onClick={() => setSel(e)}>
+          <b>{fmt(e.date)}</b> <span className="pill">{e.title}</span>
+          {e.count && <div className="muted">Sĩ số {e.count}</div>}
+          {e.image && <img src={e.image} alt="" />}
+        </div>))}
+      {!s.length && <p className="muted">Chưa có ngày tu tập nào.</p>}
+    </div>
+  );
+}
+
+function WeekCal({ events, admin, att, total, month, shift, setSel, add }) {
+  const [y, m] = month.split('-').map(Number), dim = new Date(y, m, 0).getDate();
+  const [wk, setWk] = useState(today().slice(0, 7) === month ? Math.min(4, Math.ceil(+today().slice(8) / 7)) : 1);
+  const from = (wk - 1) * 7 + 1, to = wk === 4 ? dim : wk * 7;
+  const dows = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  return (
+    <>
+      <div className="row"><button className="btn alt" onClick={() => shift(-1)}>‹</button><b style={{ flex: 1, textAlign: 'center' }}>Tháng {m}/{y}</b><button className="btn alt" onClick={() => shift(1)}>›</button></div>
+      <div className="weeks">{[1, 2, 3, 4].map((i) => <button key={i} className={'wk ' + (wk === i ? 'on' : '')} onClick={() => setWk(i)}><b>{i}</b>Tuần</button>)}</div>
+      <p className="muted">Tuần {wk} · ngày {from} đến {to}/{m}</p>
+      {Array.from({ length: to - from + 1 }, (_, i) => {
+        const dn = from + i, d = `${month}-${String(dn).padStart(2, '0')}`;
+        const evs = events.filter((e) => e.date === d), a = Object.values(att[d] || {});
+        const p = a.filter((v) => v === 'p').length, l = a.filter((v) => v === 'l').length;
+        return (
+          <div key={d} className={'wday ' + (evs.length ? 'ev' : '')} onClick={() => evs[0] && setSel(evs[0])}>
+            <div className="wd"><b>{dn}</b><span>{dows[new Date(y, m - 1, dn).getDay()]}</span></div>
+            <div style={{ flex: 1 }}>
+              {evs.map((e) => <div key={e.id}><b>{e.title}</b></div>)}
+              {evs.length || p + l ? (
+                <div className="chips">
+                  {p + l > 0 && <><span className="ok">Có mặt {p}</span><span className="ab">Vắng {Math.max(total - p - l, 0)}</span></>}
+                  <span className="pill">Sĩ số {total}</span>
+                </div>) : <span className="muted">Không có buổi tu</span>}
+            </div>
+            {admin && <button className="btn alt" onClick={(ev) => { ev.stopPropagation(); add(d); }}>+</button>}
+          </div>);
+      })}
     </>
   );
 }
@@ -234,15 +327,15 @@ function Attendance({ db, save, can }) {
   const addM = () => { if (name.trim()) { save('members', [...db.members, { id: uid(), name: name.trim() }]); setName(''); } };
   const n = (v) => db.members.filter((m) => day[m.id] === v).length;
   const total = db.members.length;
-  const stat = (l, v, c, bg) => <div style={{ background: bg, borderRadius: 14, padding: '14px 18px' }}><div style={{ color: c }}>{l}</div><div style={{ fontSize: 44, fontWeight: 700, lineHeight: 1.1, color: c }}>{v}</div></div>;
+  const stat = (l, v, cls) => <div className={'stat ' + cls}><div>{l}</div><div className="big">{v}</div></div>;
   const [y, m] = month.split('-').map(Number), dim = new Date(y, m, 0).getDate();
   const shift = (d) => { const t = new Date(y, m - 1 + d, 1); setMonth(`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`); };
   const cell = (id, i) => { const v = (db.attendance[`${month}-${String(i).padStart(2, '0')}`] || {})[id]; return v === 'p' ? '✓' : v === 'l' ? 'P' : '–'; };
   return (
     <>
       <div className="stats">
-        {stat('Sĩ số', total, '#3F4A3B', '#EEF1EA')}{stat('Có mặt', n('p'), '#2E6B3E', '#E8F2EA')}
-        {stat('Nghỉ phép', n('l'), '#8A5A24', '#FFF3E2')}{stat('Vắng', total - n('p') - n('l'), '#A33B2F', '#FBEAE7')}
+        {stat('Sĩ số', total, 's0')}{stat('Có mặt', n('p'), 's1')}
+        {stat('Nghỉ phép', n('l'), 's2')}{stat('Vắng', total - n('p') - n('l'), 's3')}
       </div>
       <div className="tabs" style={{ marginTop: 16 }}>
         <button className={'btn ' + (mode === 'day' ? '' : 'alt')} onClick={() => setMode('day')}>Theo ngày</button>
@@ -270,7 +363,7 @@ function Attendance({ db, save, can }) {
             <thead><tr><th>Họ tên</th>{Array.from({ length: dim }, (_, i) => <th key={i} className="c">{i + 1}</th>)}<th className="c">Tổng</th></tr></thead>
             <tbody>{db.members.map((mb) => (
               <tr key={mb.id}><td style={{ whiteSpace: 'nowrap' }}>{mb.name}</td>
-                {Array.from({ length: dim }, (_, i) => { const c = cell(mb.id, i + 1); return <td key={i} className="c" style={{ color: c === '✓' ? '#2E6B3E' : c === 'P' ? '#8A5A24' : '#A33B2F', fontWeight: 700 }}>{c}</td>; })}
+                {Array.from({ length: dim }, (_, i) => { const c = cell(mb.id, i + 1); return <td key={i} className={'c cell ' + (c === '✓' ? 'okt' : c === 'P' ? 'lvt' : 'abt')}>{c}</td>; })}
                 <td className="c"><b>{Array.from({ length: dim }, (_, i) => cell(mb.id, i + 1)).filter((c) => c === '✓').length}</b></td></tr>))}
             </tbody>
           </table></div>
@@ -304,7 +397,7 @@ function Reports({ list, can, onSave, att, total }) {
           <div className="row"><input placeholder="Người giảng pháp (chủ trì)" value={f.host || ''} onChange={set('host')} /><input placeholder="Pháp danh" value={f.dharma || ''} onChange={set('dharma')} /></div>
           <textarea placeholder="Báo cáo hoạt động trong buổi tu…" value={f.text} onChange={set('text')} />
           <div className="row" style={{ marginTop: 8 }}><input type="file" accept="image/*" multiple onChange={upload} /></div>
-          <div className="photos">{(f.photos || []).map((u) => <div key={u} style={{ position: 'relative' }}><img src={u} alt="" /><button className="btn alt" style={{ position: 'absolute', top: 4, right: 4, background: '#fff' }} onClick={() => setF({ ...f, photos: f.photos.filter((x) => x !== u) })}>✕</button></div>)}</div>
+          <div className="photos">{(f.photos || []).map((u) => <div key={u} style={{ position: 'relative' }}><img src={u} alt="" /><button className="btn alt" style={{ position: 'absolute', top: 4, right: 4, background: 'var(--card)' }} onClick={() => setF({ ...f, photos: f.photos.filter((x) => x !== u) })}>✕</button></div>)}</div>
           <div className="row" style={{ marginTop: 10 }}><button className="btn" onClick={submit}>Lưu báo cáo</button><button className="btn alt" onClick={() => setF(null)}>Huỷ</button></div>
         </div>)}
       {[...list].sort((a, b) => b.date.localeCompare(a.date)).map((r) => (
